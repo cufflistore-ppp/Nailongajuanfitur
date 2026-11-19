@@ -1,0 +1,49 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "suggestions": {
+      ".read": "auth != null && auth.uid === 'ISI_UID_FOUNDER'",
+      "$suggestionId": {
+        ".write": "((auth != null && auth.uid === 'ISI_UID_FOUNDER' && !newData.exists()) || (auth != null && !data.exists() && newData.exists()))",
+        ".validate": "newData.hasChildren(['nama', 'fitur', 'deskripsi', 'status', 'createdAt']) && newData.child('nama').isString() && newData.child('nama').val().length > 0 && newData.child('nama').val().length <= 80 && newData.child('fitur').isString() && newData.child('fitur').val().length > 0 && newData.child('fitur').val().length <= 120 && newData.child('deskripsi').isString() && newData.child('deskripsi').val().length > 0 && newData.child('deskripsi').val().length <= 5000 && newData.child('status').val() === 'pending' && newData.child('createdAt').isNumber() && (!newData.child('file').exists() || (newData.child('file').hasChildren(['name', 'type', 'size', 'path']) && newData.child('file/name').isString() && newData.child('file/name').val().length > 0 && newData.child('file/name').val().length <= 255 && newData.child('file/type').isString() && newData.child('file/type').val().length <= 150 && newData.child('file/size').isNumber() && newData.child('file/size').val() > 0 && newData.child('file/size').val() <= 41943040 && newData.child('file/path').isString() && newData.child('file/path').val().length <= 300))",
+        "nama": {
+          ".validate": "newData.isString()"
+        },
+        "fitur": {
+          ".validate": "newData.isString()"
+        },
+        "deskripsi": {
+          ".validate": "newData.isString()"
+        },
+        "status": {
+          ".validate": "newData.val() === 'pending'"
+        },
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        "file": {
+          ".validate": "newData.hasChildren(['name', 'type', 'size', 'path'])",
+          "name": {
+            ".validate": "newData.isString()"
+          },
+          "type": {
+            ".validate": "newData.isString()"
+          },
+          "size": {
+            ".validate": "newData.isNumber()"
+          },
+          "path": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

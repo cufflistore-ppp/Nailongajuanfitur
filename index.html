@@ -198,13 +198,13 @@
 
 <div class="card">
   <h2><i class="fa-solid fa-pen-to-square"></i> Formulir Saran</h2>
-  <p class="sub">Saran lo langsung masuk ke developer.</p>
+  <p class="sub">Saran lo langsung masuk ke panel founder.</p>
 
   <form id="formSaran">
     <label for="nama">Nama kamu</label>
-    <input type="text" id="nama" placeholder="Contoh: Nailong" required />
+    <input type="text" id="nama" placeholder="Contoh: Budi" required />
 
-    <label for="fitur">Nama Fitur</label>
+    <label for="fitur">Nama / Judul Fitur</label>
     <input type="text" id="fitur" placeholder="Contoh: Mode Gelap Otomatis" required />
 
     <label for="deskripsi">Deskripsi Saran</label>
@@ -225,122 +225,121 @@
 
 <div class="toast" id="toast"><i class="fa-solid fa-circle-check"></i> Saran berhasil dikirim!</div>
 
-<script>
-  const MAX_SIZE = 40 * 1024 * 1024; // 40MB
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  import { getDatabase, ref as dbRef, push, set, ServerValue } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+  import { getStorage, ref, uploadBytes } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 
-  // ===== IndexedDB helper =====
-  const DB_NAME = 'nailong_db';
-  const STORE = 'saran';
-  let db = null;
+  // GANTI dengan konfigurasi Firebase project BARU milikmu.
+  const firebaseConfig = {
+    apiKey: "AIzaSyDV5GAZsYUwCD-u8MnwxWvTRnFx5FR06oM",
+    authDomain: "ajukan-fitur.firebaseapp.com",
+    projectId: "ajukan-fitur",
+    storageBucket: "ajukan-fitur.firebasestorage.app",
+    messagingSenderId: "754181866440",
+    appId: "1:754181866440:web:56177a65dd63ddb18536fd",
+    measurementId: "G-LDT9HKZ1KC",
+    // Ambil URL ini dari Firebase Console > Realtime Database > Data.
+    databaseURL: "ISI_DATABASE_URL_DARI_FIREBASE"
+  };
 
-  function openDB(){
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = (e) => {
-        const d = e.target.result;
-        if (!d.objectStoreNames.contains(STORE)) {
-          d.createObjectStore(STORE, { keyPath: 'id' });
-        }
-      };
-      req.onsuccess = (e) => { db = e.target.result; resolve(db); };
-      req.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  function addSaranDB(saran){
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(saran);
-      tx.oncomplete = () => resolve();
-      tx.onerror = (e) => reject(e.target.error);
-    });
-  }
-
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+  const storage = getStorage(app);
+  const MAX_SIZE = 40 * 1024 * 1024;
+  const form = document.getElementById('formSaran');
   const fileInput = document.getElementById('file');
   const fileNameEl = document.getElementById('fileName');
   const toast = document.getElementById('toast');
+  const btn = document.getElementById('submitBtn');
+  const progress = document.getElementById('progress');
+  const bar = document.getElementById('progressBar');
 
-  function showToast(msg, isError){
+  function showToast(msg, isError=false) {
     toast.innerHTML = '<i class="fa-solid ' + (isError ? 'fa-circle-xmark' : 'fa-circle-check') + '"></i> ' + msg;
     toast.classList.toggle('error', !!isError);
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2800);
+    setTimeout(() => toast.classList.remove('show'), 3500);
   }
 
   fileInput.addEventListener('change', () => {
-    if (fileInput.files.length === 0) {
-      fileNameEl.textContent = 'Belum ada file dipilih';
-      return;
-    }
     const f = fileInput.files[0];
+    if (!f) { fileNameEl.textContent = 'Belum ada file dipilih'; return; }
     const mb = (f.size / 1024 / 1024).toFixed(2);
-    if (f.size > MAX_SIZE) {
-      fileNameEl.textContent = f.name + ' (' + mb + ' MB) — DITOLAK, maks 40MB';
-      fileNameEl.style.color = '#CC0000';
-    } else {
-      fileNameEl.textContent = f.name + ' (' + mb + ' MB)';
-      fileNameEl.style.color = 'var(--muted)';
-    }
+    fileNameEl.textContent = f.name + ' (' + mb + ' MB)' + (f.size > MAX_SIZE ? ' — DITOLAK, maks 40MB' : '');
+    fileNameEl.style.color = f.size > MAX_SIZE ? '#CC0000' : 'var(--muted)';
   });
 
-  document.getElementById('formSaran').addEventListener('submit', async (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const btn = document.getElementById('submitBtn');
-    const progress = document.getElementById('progress');
-    const bar = document.getElementById('progressBar');
-
     const nama = document.getElementById('nama').value.trim();
     const fitur = document.getElementById('fitur').value.trim();
     const deskripsi = document.getElementById('deskripsi').value.trim();
-    const file = fileInput.files[0];
+    const file = fileInput.files[0] || null;
 
-    // Tolak kalau file > 40MB
-    if (file && file.size > MAX_SIZE) {
-      showToast('File lebih dari 40MB, ditolak.', true);
-      return;
-    }
+    if (file && file.size > MAX_SIZE) return showToast('File lebih dari 40MB, ditolak.', true);
+    if (!nama || !fitur || !deskripsi) return showToast('Lengkapi semua kolom wajib.', true);
 
     btn.disabled = true;
     btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Mengirim...';
     progress.classList.add('show');
     bar.style.width = '10%';
 
+    let uploadedStoragePath = null;
     try {
-      if (!db) await openDB();
+      // Anonymous Auth diperlukan agar pengunjung bisa mengirim tanpa membuat akun.
+      if (!auth.currentUser) await signInAnonymously(auth);
+      let lampiran = null;
 
-      let fileBlob = null;
       if (file) {
-        fileBlob = file;
-        bar.style.width = '50%';
+        bar.style.width = '35%';
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+        const path = `attachments/${crypto.randomUUID()}/${safeName}`;
+        const fileRef = ref(storage, path);
+        await uploadBytes(fileRef, file, { contentType: file.type || 'application/octet-stream' });
+        uploadedStoragePath = path;
+        lampiran = {
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          path
+        };
       }
 
-      const saran = {
-        id: Date.now() + '-' + Math.random().toString(36).slice(2, 8),
-        nama, fitur, deskripsi,
-        file: fileBlob ? {
-          name: fileBlob.name,
-          type: fileBlob.type,
-          size: fileBlob.size,
-          blob: fileBlob
-        } : null,
-        tanggal: new Date().toLocaleString('id-ID')
+      bar.style.width = '80%';
+      const newSuggestionRef = push(dbRef(db, 'suggestions'));
+      const suggestionData = {
+        nama,
+        fitur,
+        deskripsi,
+        status: 'pending',
+        createdAt: ServerValue.TIMESTAMP
       };
-
-      await addSaranDB(saran);
+      // Realtime Database menghapus properti bernilai null.
+      if (lampiran) suggestionData.file = lampiran;
+      await set(newSuggestionRef, suggestionData);
       bar.style.width = '100%';
-
-      e.target.reset();
+      form.reset();
       fileNameEl.textContent = 'Belum ada file dipilih';
       fileNameEl.style.color = 'var(--muted)';
-
-      showToast('Saran berhasil dikirim!', false);
+      showToast('Saran berhasil dikirim ke Founder!');
     } catch (err) {
       console.error(err);
-      showToast('Gagal menyimpan: ' + err.message, true);
+      if (uploadedStoragePath) {
+        try {
+          const { deleteObject } = await import("https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js");
+          await deleteObject(ref(storage, uploadedStoragePath));
+        } catch (cleanupError) {
+          console.warn('File sementara gagal dibersihkan:', cleanupError);
+        }
+      }
+      showToast('Gagal mengirim. Periksa URL Realtime Database, Authentication, Storage, dan Rules.', true);
     } finally {
       btn.disabled = false;
       btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Kirim Saran';
-      setTimeout(() => { progress.classList.remove('show'); bar.style.width = '0%'; }, 800);
+      setTimeout(() => { progress.classList.remove('show'); bar.style.width = '0%'; }, 900);
     }
   });
 </script>

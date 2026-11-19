@@ -139,8 +139,8 @@
     <h2><i class="fa-solid fa-lock"></i> Founder Login</h2>
     <p>Masukkan kredensial untuk akses panel.</p>
     <form id="loginForm">
-      <label for="user">Username</label>
-      <input type="text" id="user" placeholder="Username" autocomplete="off" required />
+      <label for="user">Email Founder</label>
+      <input type="text" id="user" placeholder="Email founder" autocomplete="off" required />
       <label for="pass">Password</label>
       <div class="pass-wrap">
         <input type="password" id="pass" placeholder="Password" required />
@@ -166,150 +166,163 @@
   <div class="list" id="listSaran"></div>
 </div>
 
-<script>
-  /* ============================================================
-     KREDENSIAL DISAMARKAN (base64 + reverse)
-     Asli: Username = Rafyan, Password = Rafyan826
-     Di source code TIDAK keliatan teks aslinya.
-     ============================================================ */
-  const _u = 'bmF5ZmFS'; // "Rafyan" dibalik lalu di-base64
-  const _p = 'NjI4bmF5ZmFS'; // "Rafyan826" dibalik lalu di-base64
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  import { getDatabase, ref as dbRef, onValue, remove } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+  import { getStorage, ref, deleteObject, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js";
 
-  function _dec(s){
-    // base64 decode lalu reverse
-    return atob(s).split('').reverse().join('');
-  }
+  // GANTI dengan konfigurasi Firebase project BARU milikmu.
+  const firebaseConfig = {
+    apiKey: "AIzaSyDV5GAZsYUwCD-u8MnwxWvTRnFx5FR06oM",
+    authDomain: "ajukan-fitur.firebaseapp.com",
+    projectId: "ajukan-fitur",
+    storageBucket: "ajukan-fitur.firebasestorage.app",
+    messagingSenderId: "754181866440",
+    appId: "1:754181866440:web:56177a65dd63ddb18536fd",
+    measurementId: "G-LDT9HKZ1KC",
+    // Harus sama dengan URL Realtime Database di index.html.
+    databaseURL: "ISI_DATABASE_URL_DARI_FIREBASE"
+  };
+  // Isi UID founder dari Firebase Authentication. Ini hanya pemeriksaan tampilan;
+  // akses data tetap dikunci oleh Realtime Database Rules dan Storage Rules.
+  const FOUNDER_UID = "ISI_UID_FOUNDER";
 
-  // ===== IndexedDB =====
-  const DB_NAME = 'nailong_db';
-  const STORE = 'saran';
-  let db = null;
-
-  function openDB(){
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = (e) => {
-        const d = e.target.result;
-        if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE, { keyPath: 'id' });
-      };
-      req.onsuccess = (e) => { db = e.target.result; resolve(db); };
-      req.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  function getAllSaran(){
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  function deleteSaranDB(id){
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = (e) => reject(e.target.error);
-    });
-  }
-
-  // ===== TOMBOL MATA =====
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getDatabase(app);
+  const storage = getStorage(app);
+  let unsubscribeSuggestions = null;
+  let currentSuggestions = {};
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
   const passInput = document.getElementById('pass');
   const toggleEye = document.getElementById('toggleEye');
+
   toggleEye.addEventListener('click', () => {
-    if (passInput.type === 'password') {
-      passInput.type = 'text';
-      toggleEye.innerHTML = '<i class="fa-solid fa-eye-slash"></i>';
-    } else {
-      passInput.type = 'password';
-      toggleEye.innerHTML = '<i class="fa-solid fa-eye"></i>';
+    passInput.type = passInput.type === 'password' ? 'text' : 'password';
+    toggleEye.innerHTML = passInput.type === 'password'
+      ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
+  });
+
+  onAuthStateChanged(auth, (user) => {
+    if (user && user.uid === FOUNDER_UID) showDashboard();
+    else {
+      if (unsubscribeSuggestions) unsubscribeSuggestions();
+      document.getElementById('loginScreen').style.display = 'flex';
+      document.getElementById('dashboard').style.display = 'none';
+      document.getElementById('logo').style.display = 'none';
+      if (user) signOut(auth);
     }
   });
 
-  // ===== LOGIN =====
-  window.addEventListener('DOMContentLoaded', async () => {
-    await openDB();
-    if (sessionStorage.getItem('nailong_logged') === '1') showDashboard();
-  });
-
-  document.getElementById('loginForm').addEventListener('submit', (e) => {
+  loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const u = document.getElementById('user').value.trim();
-    const p = document.getElementById('pass').value;
-
-    if (u === _dec(_u) && p === _dec(_p)) {
-      sessionStorage.setItem('nailong_logged', '1');
-      showDashboard();
-    } else {
-      document.getElementById('loginError').style.display = 'block';
-    }
+    loginError.style.display = 'none';
+    const email = document.getElementById('user').value.trim();
+    const password = passInput.value;
+    const submit = loginForm.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, email, password);
+      if (credential.user.uid !== FOUNDER_UID) {
+        await signOut(auth);
+        throw new Error('Akun ini bukan akun founder yang diizinkan.');
+      }
+    } catch (err) {
+      console.error(err);
+      loginError.textContent = 'Login gagal. Periksa email/password atau UID founder.';
+      loginError.style.display = 'block';
+    } finally { submit.disabled = false; }
   });
 
   function showDashboard() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
     document.getElementById('logo').style.display = 'block';
-    renderSaran();
+    watchSuggestions();
   }
 
-  function logout() {
-    sessionStorage.removeItem('nailong_logged');
-    location.reload();
-  }
+  window.logout = async function() {
+    if (unsubscribeSuggestions) unsubscribeSuggestions();
+    await signOut(auth);
+  };
 
-  function escapeHtml(str){
-    return String(str).replace(/[&<>"']/g, c => ({
+  function escapeHtml(str) {
+    return String(str ?? '').replace(/[&<>"']/g, c => ({
       '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     })[c]);
   }
 
-  async function renderSaran() {
-    const list = await getAllSaran();
+  function formatDate(ts) {
+    if (!ts) return 'Baru saja';
+    return new Date(Number(ts)).toLocaleString('id-ID');
+  }
+
+  function watchSuggestions() {
+    if (unsubscribeSuggestions) unsubscribeSuggestions();
+    const suggestionsRef = dbRef(db, 'suggestions');
+    unsubscribeSuggestions = onValue(suggestionsRef, (snapshot) => {
+      currentSuggestions = snapshot.val() || {};
+      const list = Object.entries(currentSuggestions)
+        .map(([id, data]) => ({ id, ...data }))
+        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0));
+      renderSaran(list);
+    }, (err) => {
+      console.error(err);
+      document.getElementById('listSaran').innerHTML =
+        '<div class="empty">Gagal memuat data. Periksa Realtime Database Rules dan databaseURL.</div>';
+    });
+  }
+
+  async function renderSaran(list) {
     const container = document.getElementById('listSaran');
     document.getElementById('totalSaran').textContent = list.length;
     document.getElementById('totalFile').textContent = list.filter(s => s.file).length;
-
-    if (list.length === 0) {
+    if (!list.length) {
       container.innerHTML = '<div class="empty"><i class="fa-solid fa-inbox"></i> Belum ada saran masuk.</div>';
       return;
     }
-
-    list.sort((a, b) => (b.tanggal || '').localeCompare(a.tanggal || ''));
-
-    container.innerHTML = list.map(s => `
+    const cards = await Promise.all(list.map(async s => {
+      let fileLink = '';
+      if (s.file?.path) {
+        try {
+          const url = await getDownloadURL(ref(storage, s.file.path));
+          fileLink = `<a class="file-link" href="${escapeHtml(url)}" target="_blank" rel="noopener"><i class="fa-solid fa-paperclip"></i>${escapeHtml(s.file.name)} (${(s.file.size/1024/1024).toFixed(2)} MB)</a>`;
+        } catch (err) {
+          console.warn('Lampiran tidak dapat dibuka:', err);
+          fileLink = '<div class="meta">Lampiran tidak tersedia.</div>';
+        }
+      }
+      return `
       <div class="item">
-        <div class="badge"><i class="fa-regular fa-clock"></i>${escapeHtml(s.tanggal)}</div>
-        <h3><i class="fa-solid fa-lightbulb"></i>${escapeHtml(s.fitur)}</h3>
+        <div class="badge"><i class="fa-regular fa-clock"></i> ${escapeHtml(formatDate(s.createdAt))}</div>
+        <h3><i class="fa-solid fa-lightbulb"></i> ${escapeHtml(s.fitur)}</h3>
         <div class="meta"><i class="fa-solid fa-user"></i> Dari: <b>${escapeHtml(s.nama)}</b></div>
         <div class="desc">${escapeHtml(s.deskripsi)}</div>
-        ${s.file ? `<a class="file-link" data-file-id="${s.id}" href="#"><i class="fa-solid fa-paperclip"></i>${escapeHtml(s.file.name)} (${(s.file.size/1024/1024).toFixed(2)} MB)</a>` : ''}
-        <button class="delete-btn" onclick="hapusSaran('${s.id}')"><i class="fa-solid fa-trash"></i> Hapus</button>
-      </div>
-    `).join('');
-
-    container.querySelectorAll('.file-link').forEach(link => {
-      link.addEventListener('click', async (e) => {
-        e.preventDefault();
-        const id = link.getAttribute('data-file-id');
-        const all = await getAllSaran();
-        const item = all.find(x => x.id === id);
-        if (!item || !item.file) return;
-        const url = URL.createObjectURL(item.file.blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = item.file.name;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-      });
+        ${fileLink}
+        <button class="delete-btn" data-id="${escapeHtml(s.id)}"><i class="fa-solid fa-trash"></i> Hapus</button>
+      </div>`;
+    }));
+    container.innerHTML = cards.join('');
+    container.querySelectorAll('.delete-btn').forEach(button => {
+      button.addEventListener('click', () => hapusSaran(button.dataset.id));
     });
   }
 
   async function hapusSaran(id) {
     if (!confirm('Yakin hapus saran ini?')) return;
-    await deleteSaranDB(id);
-    renderSaran();
+    try {
+      const data = currentSuggestions[id];
+      if (data?.file?.path) {
+        try { await deleteObject(ref(storage, data.file.path)); }
+        catch (fileErr) { console.warn('Lampiran tidak terhapus:', fileErr); }
+      }
+      await remove(dbRef(db, `suggestions/${id}`));
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menghapus. Periksa koneksi dan Firebase Rules.');
+    }
   }
 </script>
 </body>
